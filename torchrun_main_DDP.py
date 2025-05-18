@@ -171,23 +171,7 @@ def main(args):
         )  # DGX
 
 
- 
-
-
-    '''
-    total_samples = 0
-    
-    for _ in iter(data):
-        total_samples += 1
-        if total_samples % 100000 == 0:
-            print(total_samples)
-    
-    print(f"final : {total_samples}")
-    '''
-
-
     seed_for_shuffle = 42
-    
     
 
     logger.info(f"Shuffling data with seed {seed_for_shuffle}")
@@ -238,15 +222,6 @@ def main(args):
         dataset, batch_size=None, num_workers=args.workers
     )
  
-    
-    
-    #for i, batch in enumerate(dataloader):
-    #    if i%100 == 0:
-    #        print(i) 
-    #import sys
-    #sys.exit()
-
-
 
     # model
     model_config = AutoConfig.from_pretrained(args.model_config)
@@ -275,17 +250,6 @@ def main(args):
         model = build_model(model.to(device=device), args)
         model = model.to(device=device)
 
-
-    #???
-    #from torch.nn.parallel import DistributedDataParallel as DDP
-    #model = DDP(model, device_ids=[device], find_unused_parameters=False) 
-    # ???
-    
-    
-    
-    
-
-
     n_total_params = sum(p.numel() for p in model.parameters())
     trainable_params = [p for p in model.parameters() if p.requires_grad]
 
@@ -309,12 +273,6 @@ def main(args):
         param_groups = [{'params': regular_params}, 
                         {'params': spam_params, 'density': args.density, 'update_proj_gap': args.update_gap}]
 
-
-
-
-
-    #if "galore" in args.optimizer.lower():
-        #if any(word in args.optimizer.lower() for word in ['fira', 'galore']):
     if ("galore" in args.optimizer.lower()) or ("fira" in args.optimizer.lower()):
         
         # make parameters with "rank" to a single group, if param_name has "mlp" or "attn"
@@ -324,7 +282,6 @@ def main(args):
             
             
             if not ((isinstance(module, nn.Linear)) or (module.__class__.__name__ == 'SpLoRaLinear') or (module.__class__.__name__=='Restart_LoRaLinear')  ):
-                #print(module_name, module.__class__.__name__)
                 continue
 
             if not any(target_key in module_name for target_key in target_modules_list):
@@ -333,9 +290,7 @@ def main(args):
             print(f"enable {args.optimizer.lower()} for weights in module: ", module_name)
             
             if module.__class__.__name__ == 'SpLoRaLinear' or module.__class__.__name__ == 'Restart_LoRaLinear' :
-                galore_params.append(module.lora_A)  # ???
-                galore_params.append(module.lora_B)  # ???
-                # sltrain also need S!!! but how to add S ???
+                galore_params.append(module.lora_A)  
                 
             else:
                 galore_params.append(module.weight)
@@ -378,13 +333,9 @@ def main(args):
             logger.info(f"Adding {module_name} to APOLLO parameters")
             
             if module.__class__.__name__ == 'SpLoRaLinear' or module.__class__.__name__ == 'Restart_LoRaLinear':
-                lowrank_params.append(module.lora_A)  # ???
-                lowrank_params.append(module.lora_B)  # ???
-                # sltrain also need S!!! but how to add S ???
+                lowrank_params.append(module.lora_A)
             else:
                 lowrank_params.append(module.weight)
-                
-            #lowrank_params.append(module.weight)
 
         id_lowrank_params = [id(p) for p in lowrank_params]
         # make parameters without "rank" to another group
@@ -402,49 +353,6 @@ def main(args):
                 "scale_type": args.scale_type,
             },
         ]
-    ####### ???
-    ####### ???
-    '''
-    elif "moonlight_muon_lora" in args.optimizer.lower():
-        # make parameters with "rank" to a single group, if param_name has "mlp" or "attn"
-        lowrank_params = []
-        target_modules_list = ["attn", "mlp"]
-        for module_name, module in model.named_modules():
-            if not ((isinstance(module, nn.Linear)) or (module.__class__.__name__ == 'SpLoRaLinear') or (module.__class__.__name__=='Restart_LoRaLinear')  ) :    
-                continue
-            if not any(target_key in module_name for target_key in target_modules_list):
-                continue
-            logger.info(f"Adding {module_name} to Moonlight_Muon_Lora parameters")
-            
-            if module.__class__.__name__ == 'SpLoRaLinear' or module.__class__.__name__ == 'Restart_LoRaLinear':
-                lowrank_params.append(module.lora_A)
-                lowrank_params.append(module.lora_B)
-            else:
-                lowrank_params.append(module.weight)
-
-        id_lowrank_params = [id(p) for p in lowrank_params]
-        # make parameters without "rank" to another group
-        regular_params = [p for p in model.parameters() if id(p) not in id_lowrank_params]
-        # then call low rank optimizer
-        param_groups = [
-            {"params": regular_params},
-            {
-                "params": lowrank_params,
-                "rank": args.rank,
-            },
-        ]
-    '''
-
-
-
-
-
-
-
-
-
-
-
 
 
     param_to_name = {param: name for name, param in model.named_parameters()}  # ???
@@ -453,15 +361,12 @@ def main(args):
 
     if "galore" in args.optimizer.lower():
         optimizer = build_optimizer_galore(model, param_groups, id_galore_params, args)
-    #elif "moonlight_muon_lora" in args.optimizer.lower():
-    #    optimizer = build_optimizer_moonlight_muon_lora(model, param_groups, args)
     elif "fira" in args.optimizer.lower():
         optimizer = build_optimizer_fira(model, param_groups, id_galore_params, args)
     elif "apollo" in args.optimizer.lower():
         optimizer = build_optimizer_apollo(model, param_groups, id_lowrank_params, args, param_to_name) # ???
     elif 'stable_spam' in args.optimizer.lower():
         optimizer = build_optimizer_stable_spam(model, param_groups,  args)  
-    # spam and stable_spam should be in this order !
     elif 'spam' in args.optimizer.lower():
         optimizer = build_optimizer_spam(model, param_groups,  args)  
     elif "golore" in args.optimizer.lower():
@@ -595,34 +500,8 @@ def main(args):
             )
         logger.info("*" * 40)
 
-        # !!!!!!!!!!!!!
-
-
-        # !!!!
-        
-        
-        #dataset.stop_tokenizing()
-        
-        # need to take gradient_accumulation into account ?? !!
-        
-        
- 
-
-
     scheduler_start_step = update_step
 
-
-
-
-
-
-
- 
-
-
- 
-            
- 
 
     # print params and trainable params
     logger.info(f"Running with {args.peft_model}\n")
@@ -705,21 +584,12 @@ def main(args):
     torch.cuda.reset_peak_memory_stats()
 
 
-    #logger.info(f"Experimental no_sync in use !!!!") # !!!!
-     
-    #for p in model.parameters():
-    #    print(p.shape)
- 
-        
- 
-
-
     boo = False
      
     for batch_idx, batch in enumerate(dataloader):
 
         if args.continue_from is not None and not boo:   
-            if batch_idx   <=   (update_step) * args.gradient_accumulation  - 1 :  # this works (very slow) ... but the num_workers needs to be the same as the original run !
+            if batch_idx   <=   (update_step) * args.gradient_accumulation  - 1 : 
                 if batch_idx % 1000 == 0:
                     print(batch_idx)
                 continue
@@ -727,27 +597,6 @@ def main(args):
                 print(f"\n start at {batch_idx} \n")
                 boo = True
                 
-        # test precision of opt states !
-        '''
-        for group in optimizer.param_groups:
-            
-            for p in group['params']:
-                state = optimizer.state[p]
-                for k, v in state.items():
-                    print(f"{k}: {type(v)}, dtype: {v.dtype if hasattr(v, 'dtype') else 'N/A'}")
-        '''
-      
-        '''
-        for param_group in optimizer.param_groups:
-            
-            for param in param_group['params']:
-                param_name = [name for name, _param in model.named_parameters() if _param is param][0]
-                print(f"Param name: {param_name}, Grad shape: {param.grad.shape if param.grad is not None else 'None'}")
-                
-            print("\n***\n")
-        '''
-            
-            
 
         if update_step == 0 and args.eval_at_begining :
             logger.info(f"Performing evaluation at step {update_step}")
@@ -800,27 +649,11 @@ def main(args):
         scaled_loss = loss / args.gradient_accumulation
         scaled_loss.backward()    
 
-        # is this correct ???? 
-        '''
-        if global_step % args.gradient_accumulation != 0:
-            with model.no_sync():
-                loss = model(**batch, labels=labels).loss
-                scaled_loss = loss / args.gradient_accumulation
-                scaled_loss.backward()
-        else:
-            loss = model(**batch, labels=labels).loss
-            scaled_loss = loss / args.gradient_accumulation
-            scaled_loss.backward()          
-        '''
-
         if global_step % args.gradient_accumulation != 0:
             continue
 
-        #######
         if args.grad_clipping != 0.0:
             torch.nn.utils.clip_grad_norm_(trainable_params, args.grad_clipping)
-            
-            #torch.nn.utils.clip_grad_value_(trainable_params, args.grad_clipping)
 
         grad_norm = sum(
             [
@@ -943,24 +776,6 @@ def main(args):
         if update_step % args.cycle_length == 0 and (args.peft_model.lower() == 'sltrain'):
             logger.info(f"\nReinitialize B,A at update step {update_step}")
             
-            
-            ## This part is used to save the full optimizer state and restore it after the model is reinitialized, 
-            # but if we just want to reset the opt states, we will not need this part.
-            
-            # # Save the full optimizer state
-            # optimizer_state = optimizer.state_dict()
-            
-            # # Record the old parameter order and mapping relationship
-            # param_to_state_mapping = {}
-            # for param_group in optimizer.param_groups:
-            #     for old_param in param_group['params']:
-            #         if old_param in optimizer.state:
-            #             param_to_state_mapping[id(old_param)] = optimizer.state[old_param]
-            
-            # old_params = [p for p in model.parameters() if p.requires_grad]
-            
-            
-            
             ## There is a bug with the merge & reinitialize operation on FSDP, and the solution is currently unknown. Use DDP for now.
             '''
             RuntimeError: The tensor has a non-zero number of elements, but its data is not allocated yet. 
@@ -986,12 +801,6 @@ def main(args):
             else:
                 optimizer = build_optimizer(model, new_params, args)
             
-            
-            # # Fully restore all optimizer states
-            # for old_param, new_param in zip(old_params, new_params):
-            #     if id(old_param) in param_to_state_mapping:
-            #         optimizer.state[new_param] = param_to_state_mapping[id(old_param)]
-
             # Add initial_lr
             for param_group in optimizer.param_groups:
                 param_group['initial_lr'] = args.lr  
